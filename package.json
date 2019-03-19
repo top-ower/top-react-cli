@@ -1,9 +1,9 @@
 {
-  "name": "asuna-cli",
+  "name": "top-react-cli",
   "version": "1.0.0",
   "description": "前端构建工具",
-  "repository": "git@github.com:ruichengping/asuna-cli.git",
-  "author": "芮程平 <819621056@qq.com>",
+  "repository": "git@github.com:top-ower/top-react-cli.git",
+  "author": "david.deng <353875492@qq.com>",
   "license": "MIT",
   "bin": {
     "asuna": "bin/asuna"
