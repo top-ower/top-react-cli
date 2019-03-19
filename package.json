@@ -6,7 +6,7 @@
   "author": "david.deng <353875492@qq.com>",
   "license": "MIT",
   "bin": {
-    "asuna": "bin/asuna"
+    "top-react": "bin/top-react"
   },
   "dependencies": {
     "async": "^2.6.1",
