@@ -1,0 +1,165 @@
+#!/usr/bin/env node
+const program=require('commander')
+const path=require('path')
+const exists=require('fs').existsSync
+const chalk=require('chalk')
+const inquirer=require('inquirer')
+const Metalsmith=require('metalsmith')
+const ora=require('ora')
+const Handlebars=require('handlebars')
+const rm=require('rimraf').sync
+const checkVersion=require('../lib/check-version.js')
+const renderTemplateFiles=require('../lib/render-template-files')
+const transformIntoAbsolutePath=require('../lib/local-path').transformIntoAbsolutePath
+
+program
+  .usage('<type[component,page]>')
+  .option('-c, --config [config]','use the specified config')
+  .option('-d, --dest [dest]','the destination of page or component')
+  .on('--help', () => {
+    console.log('  Examples:')
+    console.log()
+    console.log(chalk.gray('    # new a page'))
+    console.log('    $ top new page')
+    console.log()
+    console.log(chalk.gray('    # new a component'))
+    console.log('    $ top new component')
+    console.log()
+  })
+  .on('exit',()=>{
+    console.log()
+  })
+
+//保证输入new的类型
+program.parse(process.argv)
+if (program.args.length < 1) return program.help()
+
+
+//检验new的类型是否合法
+const newType=program.args[0]
+
+if(newType!=='component'&&newType!=='page'){
+  console.log()
+  console.log(chalk.red(`Do not support this type <${newType}>,please choose one between component and page`))
+  console.log()  
+  process.exit()
+}
+//检测版本，并执行主函数
+checkVersion(()=>{
+  main()
+})
+
+/**
+ * Main
+ */
+function main(){
+  //获取top-react.config.js的位置 
+  let configPath=path.join(process.cwd(),'top-react.config.js')
+  if(program.config){
+    configPath=path.isAbsolute(program.config)?program.config:path.join(process.cwd(),program.config)
+  }
+  const topConfig = require(configPath)
+  const templates = topConfig[`${newType}`].templates
+  const defaultDest = topConfig[`${newType}`].output
+  const helpers = topConfig.helpers
+  //注册helpers
+  helpers && Object.keys(helpers).map(key => {
+    Handlebars.registerHelper(key, helpers[key])
+  })
+  //选择模板文件  
+  chooseedTemplate(templates,function (choosedTemplate) {
+    inquirer.prompt([{
+        type:'input',
+        name:'name',
+        message:`Input the name of new ${newType}`,
+        default:choosedTemplate.name
+    }].concat(choosedTemplate.prompts)).then((answers)=>{
+        //最终构建路径
+      const finalDestination=path.join(program.dest?transformIntoAbsolutePath(program.dest):defaultDest,answers.name);
+        //判断生成目录下是否存在同名
+      if(exists(finalDestination)){
+        confirmOverride(newType,answers.name,function(override){
+          if(override){
+            rm(finalDestination)
+            newPageOrComponent(choosedTemplate.src,finalDestination,answers);
+          }else{
+              process.exit();
+          }
+        })
+      }else{
+        newPageOrComponent(choosedTemplate.src,finalDestination,answers);
+      }
+    })
+  })
+}
+
+/**
+ * 
+ * @param templates
+ * @param callback
+ */
+function chooseedTemplate(templates,callback){
+  inquirer.prompt([{
+    type:'list',
+    name:'name',
+    choices:templates.map(template=>template.name),
+    message:`Choose one ${newType} you need`  
+  }]).then((answers)=>{
+    const {name} = answers
+    const choosedTemplate = templates.find(template=>template.name===name)
+    if(typeof callback === 'function'){
+      callback(choosedTemplate)
+    }
+  });
+}
+/**
+ * 
+ * @param newType 
+ * @param name 
+ * @param callback 
+ */
+function confirmOverride(newType,name,callback) {
+  inquirer.prompt([{
+      type:'confirm',
+      name:'override',
+      message:`The ${newType} named ${name} exists!Override?`
+  }]).then(answers=>{
+      const {override} = answers
+      if(typeof callback === 'function'){
+        callback(override)
+      }
+  })
+}
+
+/**
+ * 
+ * @param {String}source 
+ * @param {String}destination 
+ */
+function newPageOrComponent(source,destination,otherMetadata){
+  const spinner = ora(`Newing ${newType}...`).start()
+  try{
+    const metalsmith=Metalsmith(source)
+    //加入新的全局变量
+    Object.assign(metalsmith.metadata(),otherMetadata)
+    //使用中间件
+    metalsmith.use(renderTemplateFiles())
+    //最后生成
+    metalsmith
+    .source('.')
+    .destination(destination)
+    .clean(false)
+    .build(function(err) {
+        spinner.stop()
+        if (err) throw err
+        console.log()
+        console.log(chalk.green('New Successfully'))
+        console.log()
+        console.log(`${chalk.green('Please cd')} ${destination} ${chalk.green(`to check your ${newType}`)}`)
+        console.log()
+    })
+  }catch (err) {
+    spinner.stop()
+    console.log(err)
+  }
+}
